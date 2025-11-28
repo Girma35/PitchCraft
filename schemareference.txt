@@ -1,0 +1,145 @@
+================================================================================
+SUPABASE DATABASE SCHEMA REFERENCE
+================================================================================
+Last Updated: 2025-11-22
+Project: Email AI - Simplified Schema
+
+================================================================================
+TABLE: profiles
+================================================================================
+
+Purpose: Store LinkedIn profile data from Apify as raw JSON (no field extraction)
+
+CREATE TABLE Statement:
+------------------------------------------------------------------------------
+CREATE TABLE profiles (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  linkedin_url text NOT NULL UNIQUE,
+  raw_data jsonb,
+  created_at timestamp with time zone DEFAULT timezone('utc', now())
+);
+
+Column Details:
+------------------------------------------------------------------------------
+┌─────────────────┬──────────────────────────┬─────────────────────────────┐
+│ Column Name     │ Data Type                │ Constraints/Description     │
+├─────────────────┼──────────────────────────┼─────────────────────────────┤
+│ id              │ uuid                     │ PRIMARY KEY                 │
+│                 │                          │ Auto-generated UUID         │
+├─────────────────┼──────────────────────────┼─────────────────────────────┤
+│ linkedin_url    │ text                     │ NOT NULL, UNIQUE            │
+│                 │                          │ LinkedIn company/profile URL│
+├─────────────────┼──────────────────────────┼─────────────────────────────┤
+│ raw_data        │ jsonb                    │ Nullable                    │
+│                 │                          │ Complete JSON from Apify    │
+│                 │                          │ No field extraction needed  │
+├─────────────────┼──────────────────────────┼─────────────────────────────┤
+│ created_at      │ timestamp with time zone │ Default: timezone('utc',    │
+│                 │                          │ now())                      │
+└─────────────────┴──────────────────────────┴─────────────────────────────┘
+
+Example Data:
+------------------------------------------------------------------------------
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "linkedin_url": "https://www.linkedin.com/company/apple",
+  "raw_data": {
+    "company_name": "Apple",
+    "company_id": "162479",
+    "industry": "Consumer Electronics",
+    "description": "We're a diverse collective...",
+    "website": "http://www.apple.com",
+    "followers": 20000000,
+    "employees": "10,001+",
+    "location": "Cupertino, CA",
+    ... (all other fields from Apify)
+  },
+  "created_at": "2025-11-22T10:51:59.146648+00:00"
+}
+
+Design Philosophy:
+------------------------------------------------------------------------------
+✅ SIMPLE: Just store the entire JSON blob from Apify
+✅ FLEXIBLE: No need to update schema when Apify changes
+✅ COMPLETE: All data preserved, nothing lost
+✅ FAST: Single insert, no field mapping
+
+Usage Notes:
+------------------------------------------------------------------------------
+1. linkedin_url is the unique identifier (prevents duplicates)
+2. raw_data stores the COMPLETE JSON response from Apify
+3. Query inside JSONB using PostgreSQL operators: raw_data->>'field_name'
+4. Use upsert to update existing profiles or create new ones
+
+Code Examples:
+------------------------------------------------------------------------------
+
+// Insert profile (simple - just save the JSON)
+await supabase.from('profiles').insert({
+  linkedin_url: 'https://www.linkedin.com/company/apple',
+  raw_data: apifyJsonResponse  // Just pass the whole thing!
+});
+
+// Query profiles
+const { data, error } = await supabase
+  .from('profiles')
+  .select('*')
+  .limit(10);
+
+// Find by LinkedIn URL
+const { data, error } = await supabase
+  .from('profiles')
+  .select('*')
+  .eq('linkedin_url', 'https://www.linkedin.com/company/apple')
+  .single();
+
+// Query inside JSONB (extract specific field)
+const { data, error } = await supabase
+  .from('profiles')
+  .select('linkedin_url, raw_data->company_name as name')
+  .eq('raw_data->>industry', 'Technology');
+
+================================================================================
+ENVIRONMENT VARIABLES
+================================================================================
+
+Required for Supabase connection:
+- SUPABASE_URL or VITE_SUPABASE_URL
+- SUPABASE_KEY or VITE_SUPABASE_ANON_KEY
+
+Note: VITE_* variables are for client-side, use SUPABASE_* for server-side
+
+Required for Apify:
+- APIFY_TOKEN                    # Your Apify API token
+- APIFY_ACTOR_ID                 # z2Fffb9ooRhoCtS15 (company profiles)
+
+================================================================================
+APIFY ACTORS
+================================================================================
+
+Company Profile Scraper:
+- Actor ID: z2Fffb9ooRhoCtS15
+- Purpose: Scrapes LinkedIn company pages
+- Example URL: https://www.linkedin.com/company/apple
+- Input format: company_profile_urls (array)
+- Proxy: DATACENTER
+- Output: Complete JSON with all company data
+
+================================================================================
+WORKFLOW
+================================================================================
+
+1. Scrape LinkedIn using Apify → get JSON
+   - Use Apify actor to scrape company/profile
+   - Returns clean JSON object with all fields
+
+2. Save the JSON directly to Supabase
+   - No field extraction needed
+   - Just insert: { linkedin_url, raw_data }
+   - Done!
+
+3. Query when needed
+   - Retrieve raw_data JSONB
+   - Extract fields on-the-fly using raw_data->>'field_name'
+
+================================================================================
